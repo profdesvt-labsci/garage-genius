@@ -1,0 +1,28 @@
+name: Mensuel-precalc
+on:
+  schedule:
+    - cron: "0 21 L * *"  # Dernier jour du mois, 21:00 UTC ≈ 23:00 Paris (hiver)
+  workflow_dispatch: {}     # Lancer à la main si besoin
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install papermill jupyter nbformat
+      - name: Exécuter le notebook (avec paramètres)
+        run: |
+          papermill notebooks/Backtest_V10_4Univers.ipynb out/out.ipynb \
+            -p EXECUTION_DAY first_business_day \
+            -p DEPUIS "2014-01" -p JUSQUA "2025-12"
+      - name: Exemple d’export
+        run: |
+          python - << 'PY'
+import pandas as pd, os
+os.makedirs("out", exist_ok=True)
+pd.DataFrame({"ordre":["EXEMPLE"],"montant":[800]}).to_csv("out/orders_2025-12.csv", index=False)
+print("Fichier d’ordres écrit.")
+PY
+      - uses: actions/upload-artifact@v4
+        with: { name: orders, path: out/*.csv }
