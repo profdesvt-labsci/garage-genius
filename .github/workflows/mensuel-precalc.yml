@@ -2,14 +2,13 @@ name: Mensuel-precalc
 
 on:
   schedule:
-    - cron: "0 21 * * *"   # Tous les jours 21:00 UTC ; on filtrera côté job
-  workflow_dispatch: {}     # Permet un lancement manuel
+    - cron: "0 21 * * *"   # Tous les jours 21:00 UTC (on filtre après)
+  workflow_dispatch: {}     # Lancement manuel possible
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      # Garde-fou : on ne continue que le dernier jour du mois (sauf déclenchement manuel)
       - name: Vérifier si dernier jour du mois
         id: gate
         run: |
@@ -29,26 +28,26 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Installer les dépendances
+      - name: Installer dépendances
         if: steps.gate.outputs.run == 'true'
-        run: pip install papermill jupyter nbformat pandas
+        run: pip install jupytext papermill jupyter nbformat pandas
 
-      - name: Exécuter le notebook (avec paramètres)
+      - name: Convertir le .py en .ipynb
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          jupytext --to ipynb notebooks/Backtest_V10_4Univers.py \
+                   -o notebooks/Backtest_V10_4Univers.ipynb
+
+      - name: Exécuter le notebook (Papermill)
         if: steps.gate.outputs.run == 'true'
         run: |
           papermill notebooks/Backtest_V10_4Univers.ipynb out/out.ipynb \
             -p EXECUTION_DAY first_business_day \
             -p DEPUIS "2014-01" -p JUSQUA "2025-12"
 
-      - name: Exemple d’export (CSV d’ordres)
+      - name: Publier le CSV d’ordres
         if: steps.gate.outputs.run == 'true'
-        run: |
-          python -c "import pandas as pd, os; os.makedirs('out', exist_ok=True); \
-                     pd.DataFrame({'ordre':['EXEMPLE'],'montant':[800]}).to_csv('out/orders_2025-12.csv', index=False); \
-                     print('Fichier d’ordres écrit.')"
-
-      - uses: actions/upload-artifact@v4
-        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
         with:
           name: orders
           path: out/*.csv
