@@ -2,8 +2,8 @@ name: Mensuel-precalc
 
 on:
   schedule:
-    - cron: "0 21 * * *"   # Tous les jours 21:00 UTC (on filtre après)
-  workflow_dispatch: {}     # Lancement manuel possible
+    - cron: "0 6 1 * *"  # 06:00 UTC le 1er du mois
+  workflow_dispatch: {}
 
 jobs:
   run:
