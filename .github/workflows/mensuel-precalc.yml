@@ -1,4 +1,4 @@
-name: Mensuel-precalc
+name: mensuel-precalc
 
 on:
   schedule:
