@@ -1,28 +1,54 @@
 name: Mensuel-precalc
+
 on:
   schedule:
-    - cron: "0 21 L * *"  # Dernier jour du mois, 21:00 UTC ≈ 23:00 Paris (hiver)
-  workflow_dispatch: {}     # Lancer à la main si besoin
+    - cron: "0 21 * * *"   # Tous les jours 21:00 UTC ; on filtrera côté job
+  workflow_dispatch: {}     # Permet un lancement manuel
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
+      # Garde-fou : on ne continue que le dernier jour du mois (sauf déclenchement manuel)
+      - name: Vérifier si dernier jour du mois
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          elif [ "$(date -u -d 'tomorrow' +%d)" = "01" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-      - run: pip install papermill jupyter nbformat
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        if: steps.gate.outputs.run == 'true'
+        run: pip install papermill jupyter nbformat pandas
+
       - name: Exécuter le notebook (avec paramètres)
+        if: steps.gate.outputs.run == 'true'
         run: |
           papermill notebooks/Backtest_V10_4Univers.ipynb out/out.ipynb \
             -p EXECUTION_DAY first_business_day \
             -p DEPUIS "2014-01" -p JUSQUA "2025-12"
-      - name: Exemple d’export
+
+      - name: Exemple d’export (CSV d’ordres)
+        if: steps.gate.outputs.run == 'true'
         run: |
-          python - << 'PY'
-import pandas as pd, os
-os.makedirs("out", exist_ok=True)
-pd.DataFrame({"ordre":["EXEMPLE"],"montant":[800]}).to_csv("out/orders_2025-12.csv", index=False)
-print("Fichier d’ordres écrit.")
-PY
+          python -c "import pandas as pd, os; os.makedirs('out', exist_ok=True); \
+                     pd.DataFrame({'ordre':['EXEMPLE'],'montant':[800]}).to_csv('out/orders_2025-12.csv', index=False); \
+                     print('Fichier d’ordres écrit.')"
+
       - uses: actions/upload-artifact@v4
-        with: { name: orders, path: out/*.csv }
+        if: steps.gate.outputs.run == 'true'
+        with:
+          name: orders
+          path: out/*.csv
