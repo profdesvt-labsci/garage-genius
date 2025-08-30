@@ -1,0 +1,99 @@
+name: mensuel-precalc-ghpages
+
+on:
+  schedule:
+    - cron: "0 6 1 * *"   # 06:00 UTC le 1er du mois
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer dépendances
+        run: pip install jupytext papermill nbformat pandas ipykernel
+
+      - name: Convertir le .py en .ipynb (Jupytext)
+        run: |
+          jupytext --to ipynb notebooks/Backtest_V10_4Univers.py \
+                   -o notebooks/Backtest_V10_4Univers.ipynb
+
+      - name: Créer le dossier de sortie
+        run: mkdir -p out
+
+      - name: Exécuter le notebook (Papermill)
+        run: |
+          papermill notebooks/Backtest_V10_4Univers.ipynb out/out.ipynb \
+            -p EXECUTION_DAY first_business_day \
+            -p DEPUIS "2014-01" \
+            -p JUSQUA "$(date -u +'%Y-%m')"
+
+      - name: Tag du mois (UTC)
+        id: tag
+        run: echo "tag=$(date -u +'%Y-%m')" >> $GITHUB_OUTPUT
+
+      - name: Normaliser les noms (orders.csv / report.ipynb)
+        run: |
+          # Duplique le premier CSV d’ordres en nom générique
+          set -e
+          csvfile=$(ls -1 out/*.csv | head -n1 || true)
+          if [ -n "$csvfile" ]; then
+            cp -v "$csvfile" out/orders.csv
+          else
+            # Crée un CSV vide si besoin (pour ne pas casser la publication)
+            echo "ordre,montant" > out/orders.csv
+          fi
+          cp -v out/out.ipynb out/report.ipynb
+
+      - name: Index HTML minimal
+        run: |
+          set -e
+          echo "<h1>Résultats ${{ steps.tag.outputs.tag }}</h1>" > out/index.html
+          echo "<ul>" >> out/index.html
+          for f in out/*; do bn=$(basename "$f"); echo "<li><a href=\"$bn\">$bn</a></li>" >> out/index.html; done
+          echo "</ul>" >> out/index.html
+
+      # 1ère publication : dossier mensuel YYYY-MM/
+      - name: Déployer sur gh-pages (dossier YYYY-MM)
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: out
+          keep_files: true
+          destination_dir: ${{ steps.tag.outputs.tag }}
+
+      # 2ème publication : dossier latest/ (toujours la dernière version)
+      - name: Préparer 'latest'
+        run: |
+          rm -rf out_latest && mkdir -p out_latest
+          cp -v out/* out_latest/
+          # Adapter l'index
+          sed -i '1s/.*/<h1>Résultats (latest)<\/h1>/' out_latest/index.html
+
+      - name: Déployer sur gh-pages (dossier latest)
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: out_latest
+          keep_files: true
+          destination_dir: latest
+
+      # Artefacts téléchargeables depuis l’onglet Actions (optionnel)
+      - name: Artefact zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ steps.tag.outputs.tag }}
+          path: out/*
+          retention-days: 10
