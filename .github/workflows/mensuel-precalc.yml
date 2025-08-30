@@ -9,45 +9,50 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - name: Vérifier si dernier jour du mois
-        id: gate
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "run=true" >> $GITHUB_OUTPUT
-          elif [ "$(date -u -d 'tomorrow' +%d)" = "01" ]; then
-            echo "run=true" >> $GITHUB_OUTPUT
-          else
-            echo "run=false" >> $GITHUB_OUTPUT
-          fi
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/checkout@v4
-        if: steps.gate.outputs.run == 'true'
-
-      - uses: actions/setup-python@v5
-        if: steps.gate.outputs.run == 'true'
+      - name: Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Installer dépendances
-        if: steps.gate.outputs.run == 'true'
-        run: pip install jupytext papermill jupyter nbformat pandas
+        run: pip install jupytext papermill nbformat pandas ipykernel
 
-      - name: Convertir le .py en .ipynb
-        if: steps.gate.outputs.run == 'true'
+      - name: Convertir le .py en .ipynb (Jupytext)
         run: |
           jupytext --to ipynb notebooks/Backtest_V10_4Univers.py \
                    -o notebooks/Backtest_V10_4Univers.ipynb
 
+      - name: Créer le dossier de sortie
+        run: mkdir -p out
+
       - name: Exécuter le notebook (Papermill)
-        if: steps.gate.outputs.run == 'true'
         run: |
           papermill notebooks/Backtest_V10_4Univers.ipynb out/out.ipynb \
             -p EXECUTION_DAY first_business_day \
-            -p DEPUIS "2014-01" -p JUSQUA "2025-12"
+            -p DEPUIS "2014-01" \
+            -p JUSQUA "2025-12"
 
-      - name: Publier le CSV d’ordres
-        if: steps.gate.outputs.run == 'true'
+      - name: Définir le tag du mois (UTC)
+        id: tag
+        run: echo "tag=$(date -u +'%Y-%m')" >> $GITHUB_OUTPUT
+
+      - name: Lister les fichiers produits (debug)
+        run: |
+          echo "::group::Arborescence"
+          ls -R
+          echo "::endgroup::"
+          echo "::group::Contenu de out/"
+          ls -l out || true
+          echo "::endgroup::"
+
+      - name: Publier les résultats
         uses: actions/upload-artifact@v4
         with:
-          name: orders
-          path: out/*.csv
+          name: results-${{ steps.tag.outputs.tag }}
+          path: |
+            out/*.ipynb
+            out/*.csv
+          retention-days: 10
